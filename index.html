@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WaveThread Messenger</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    :root {
+      --bg: #111b21;
+      --panel: #202c33;
+      --accent: #00a884;
+      --text: #e9edef;
+      --subtext: #8696a0;
+      --bubble-sent: #005c4b;
+      --bubble-recv: #202c33;
+      --input-bg: #2a3942;
+    }
+    .light-theme {
+      --bg: #f0f2f5;
+      --panel: #ffffff;
+      --accent: #008069;
+      --text: #111b21;
+      --subtext: #667781;
+      --bubble-sent: #d9fdd3;
+      --bubble-recv: #ffffff;
+      --input-bg: #f0f2f5;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    
+    /* Toast Notification */
+    #notification-toast {
+      position: fixed; top: 15px; right: 15px; background: var(--accent); color: white;
+      padding: 12px 20px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      display: none; z-index: 10000; animation: slideIn 0.3s ease;
+    }
+    @keyframes slideIn { from { transform: translateY(-30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+    /* Auth Screen */
+    #auth-screen { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; gap: 15px; padding: 20px; }
+    #auth-screen input { padding: 12px; width: 100%; max-width: 320px; border-radius: 8px; border: 1px solid var(--subtext); background: var(--panel); color: var(--text); }
+    #auth-screen button { padding: 12px 30px; background: var(--accent); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
+
+    /* Main Screen */
+    #main-screen { display: none; height: 100vh; flex-direction: column; }
+    header { background: var(--panel); padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); }
+    .tabs { display: flex; gap: 10px; background: var(--panel); padding: 8px 16px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+    .tab-btn { flex: 1; padding: 10px; text-align: center; background: transparent; border: none; color: var(--subtext); font-weight: bold; cursor: pointer; }
+    .tab-btn.active { color: var(--accent); border-bottom: 3px solid var(--accent); }
+
+    /* Panels */
+    .panel { display: none; flex: 1; overflow-y: auto; }
+    .panel.active { display: flex; flex-direction: column; }
+
+    /* Chat Area */
+    #chats-panel { display: none; flex-direction: column; height: 100%; }
+    #chats-panel.active { display: flex; }
+    .dm-bar { padding: 10px; background: var(--panel); display: flex; gap: 8px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .dm-bar input { flex: 1; padding: 8px 12px; border-radius: 20px; border: none; background: var(--input-bg); color: var(--text); }
+    .dm-bar button { padding: 8px 16px; background: var(--accent); color: white; border: none; border-radius: 20px; font-weight: bold; cursor: pointer; }
+
+    #private-chats-list { display: flex; flex-direction: column; overflow-y: auto; }
+    .chat-list-item { display: flex; align-items: center; padding: 12px 16px; gap: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; }
+    .chat-avatar { width: 45px; height: 45px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; font-weight: bold; color: white; }
+
+    /* Active Chat Room View */
+    #active-chat-view { display: none; flex-direction: column; height: 100%; flex: 1; background: var(--bg); }
+    #chat-header { padding: 10px 16px; background: var(--panel); display: flex; align-items: center; gap: 12px; }
+    #messages-container { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+
+    /* Message Bubbles */
+    .message-bubble { max-width: 75%; padding: 8px 12px; border-radius: 8px; position: relative; font-size: 0.95rem; line-height: 1.4; word-wrap: break-word; }
+    .message-bubble.sent { align-self: flex-end; background: var(--bubble-sent); }
+    .message-bubble.received { align-self: flex-start; background: var(--bubble-recv); }
+    .media-element { max-width: 100%; max-height: 250px; border-radius: 8px; margin-top: 5px; }
+    .msg-time { font-size: 0.68rem; color: var(--subtext); text-align: right; margin-top: 4px; }
+    .reply-quote { background: rgba(0,0,0,0.15); border-left: 4px solid var(--accent); padding: 4px 8px; font-size: 0.82rem; margin-bottom: 4px; border-radius: 4px; }
+
+    /* Message Input Bar (RESTORED & PERMANENT) */
+    #input-bar { display: flex; align-items: center; gap: 8px; padding: 10px; background: var(--panel); border-top: 1px solid rgba(255,255,255,0.05); }
+    #message-input { flex: 1; padding: 12px 16px; border-radius: 24px; border: none; background: var(--input-bg); color: var(--text); outline: none; font-size: 0.95rem; }
+    .icon-btn { background: transparent; border: none; font-size: 1.3rem; cursor: pointer; padding: 6px; color: var(--subtext); }
+    .icon-btn.recording { color: #ff4b4b; animation: pulse 1s infinite; }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+
+    /* Status System */
+    #status-panel { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+    .my-status-card { display: flex; align-items: center; gap: 12px; background: var(--panel); padding: 12px; border-radius: 12px; cursor: pointer; }
+    .status-feed-list { display: flex; flex-direction: column; gap: 10px; }
+    .status-card { display: flex; align-items: center; justify-content: space-between; background: var(--panel); padding: 10px; border-radius: 10px; }
+    .status-thumb { width: 50px; height: 50px; object-fit: cover; border-radius: 8px; }
+    .delete-status-btn { background: #ff4b4b; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; cursor: pointer; font-weight: bold; }
+
+    /* Viewer Modal */
+    #status-viewer-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); flex-direction: column; justify-content: space-between; align-items: center; padding: 20px; z-index: 9999; }
+    #status-media-holder { flex: 1; display: flex; align-items: center; justify-content: center; width: 100%; }
+    #status-media-holder img, #status-media-holder video { max-width: 100%; max-height: 80vh; border-radius: 12px; }
+  </style>
+</head>
+<body>
+  <!-- Toast Notification -->
+  <div id="notification-toast"></div>
+
+  <!-- Authentication Screen -->
+  <div id="auth-screen">
+    <h2>WaveThread Messenger</h2>
+    <input type="text" id="user-name" placeholder="Enter your display name">
+    <input type="text" id="user-phone" placeholder="Enter your phone number">
+    <button id="login-btn">Start Messaging</button>
+  </div>
+
+  <!-- Main Application Screen -->
+  <div id="main-screen">
+    <header>
+      <h3>WaveThread</h3>
+      <button class="icon-btn" id="theme-btn">🌙</button>
+    </header>
+
+    <div class="tabs">
+      <button class="tab-btn active" id="tab-chats">CHATS</button>
+      <button class="tab-btn" id="tab-status">STATUS</button>
+    </div>
+
+    <!-- Chats Panel -->
+    <div class="panel active" id="chats-panel">
+      <div class="dm-bar">
+        <input type="text" id="dm-phone-input" placeholder="Enter phone number to DM">
+        <button id="start-dm-btn">Chat</button>
+      </div>
+
+      <div id="private-chats-list"></div>
+
+      <!-- Active Chat View with Restored Controls -->
+      <div id="active-chat-view">
+        <div id="chat-header">
+          <button class="icon-btn" id="close-chat-btn">⬅️</button>
+          <div class="chat-avatar" id="active-avatar">?</div>
+          <h4 id="active-chat-name">Select or Start a Chat</h4>
+        </div>
+
+        <div id="messages-container"></div>
+
+        <div id="reply-preview-bar" style="display:none; padding:8px; background:var(--panel); border-left:4px solid var(--accent); justify-content:space-between;">
+          <span id="reply-preview-text" style="font-size:0.85rem; color:var(--subtext);"></span>
+          <button class="icon-btn" onclick="cancelReply()">✕</button>
+        </div>
+
+        <!-- RESTORED MESSAGE & UPLOAD BAR -->
+        <div id="input-bar">
+          <button class="icon-btn" id="attach-btn">📎</button>
+          <input type="file" id="media-file-input" style="display:none;" accept="image/*,video/*,audio/*">
+          
+          <input type="text" id="message-input" placeholder="Type a message...">
+          
+          <button class="icon-btn" id="mic-btn">🎙️</button>
+          <button class="icon-btn" id="send-btn" style="color:var(--accent);">➔</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status Panel -->
+    <div class="panel" id="status-panel">
+      <div class="my-status-card">
+        <div class="chat-avatar" id="status-avatar-my">+</div>
+        <div style="flex:1;">
+          <h4>My Status</h4>
+          <p style="font-size:0.8rem; color:var(--subtext);">Tap to post an update</p>
+        </div>
+        <button id="post-status-btn" style="background:var(--accent); color:white; border:none; padding:8px 14px; border-radius:20px; font-weight:bold; cursor:pointer;">Post</button>
+        <input type="file" id="status-file-input" style="display:none;" accept="image/*,video/*">
+      </div>
+
+      <h4 style="margin-top:10px; color:var(--subtext); font-size:0.9rem;">RECENT UPDATES</h4>
+      <div class="status-feed-list" id="status-feed-list"></div>
+    </div>
+  </div>
+
+  <!-- Status Viewer Modal -->
+  <div id="status-viewer-modal">
+    <div style="display:flex; justify-content:space-between; width:100%; color:white;">
+      <h4 id="status-viewer-user">User</h4>
+      <button class="icon-btn" onclick="closeStatusViewer()" style="color:white;">✕</button>
+    </div>
+    <div id="status-media-holder"></div>
+    <div id="status-viewer-views" style="color:white; font-size:0.9rem;">👁️ 0 views</div>
+  </div>
+  <script>
+    const socket = io();
+    let currentUser = { name: '', phone: '' };
+    let activeRoomId = null;
+    let replyTargetMessage = null;
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let savedPrivateChats = new Set();
+
+    // Notification Helper
+    function showNotification(text) {
+      const toast = document.getElementById('notification-toast');
+      toast.textContent = text;
+      toast.style.display = 'block';
+      setTimeout(() => { toast.style.display = 'none'; }, 4000);
+    }
+
+    // Login
+    document.getElementById('login-btn').addEventListener('click', () => {
+      const name = document.getElementById('user-name').value.trim();
+      const phone = document.getElementById('user-phone').value.trim();
+      if (!name || !phone) return alert('Enter name and phone.');
+      currentUser = { name, phone };
+      document.getElementById('auth-screen').style.display = 'none';
+      document.getElementById('main-screen').style.display = 'flex';
+      document.getElementById('status-avatar-my').textContent = name.charAt(0).toUpperCase();
+      fetchStatuses();
+    });
+
+    // Navigation Tabs
+    const tabChats = document.getElementById('tab-chats');
+    const tabStatus = document.getElementById('tab-status');
+    tabChats.addEventListener('click', () => {
+      tabChats.classList.add('active'); tabStatus.classList.remove('active');
+      document.getElementById('chats-panel').classList.add('active');
+      document.getElementById('status-panel').classList.remove('active');
+    });
+    tabStatus.addEventListener('click', () => {
+      tabStatus.classList.add('active'); tabChats.classList.remove('active');
+      document.getElementById('status-panel').classList.add('active');
+      document.getElementById('chats-panel').classList.remove('active');
+      fetchStatuses();
+    });
+
+    // Theme Toggle
+    document.getElementById('theme-btn').addEventListener('click', () => document.body.classList.toggle('light-theme'));
+
+    // Start DM
+    document.getElementById('start-dm-btn').addEventListener('click', () => {
+      const targetPhone = document.getElementById('dm-phone-input').value.trim();
+      if (!targetPhone || targetPhone === currentUser.phone) return alert('Enter valid target phone number.');
+      const roomId = [currentUser.phone, targetPhone].sort().join('_');
+      addPrivateChatToSidebar(roomId, targetPhone);
+      openChat(roomId, `DM: ${targetPhone}`);
+      document.getElementById('dm-phone-input').value = '';
+    });
+
+    function addPrivateChatToSidebar(roomId, label) {
+      if (savedPrivateChats.has(roomId)) return;
+      savedPrivateChats.add(roomId);
+      const list = document.getElementById('private-chats-list');
+      const item = document.createElement('div');
+      item.className = 'chat-list-item';
+      item.onclick = () => openChat(roomId, `DM: ${label}`);
+      item.innerHTML = `
+        <div class="chat-avatar">${label.charAt(0).toUpperCase()}</div>
+        <div class="chat-info"><h4>${escapeHtml(label)}</h4><p>Private Chat Room</p></div>
+      `;
+      list.prepend(item);
+    }
+
+    function openChat(roomId, displayName) {
+      activeRoomId = roomId;
+      document.getElementById('active-chat-view').style.display = 'flex';
+      document.getElementById('active-chat-name').textContent = displayName;
+      document.getElementById('active-avatar').textContent = displayName.replace('DM: ', '').charAt(0).toUpperCase();
+      socket.emit('join_room', roomId);
+    }
+
+    document.getElementById('close-chat-btn').addEventListener('click', () => {
+      document.getElementById('active-chat-view').style.display = 'none';
+      activeRoomId = null;
+    });
+
+    // Socket Events & Group Chat Notifications
+    socket.on('load_messages', (messages) => {
+      const container = document.getElementById('messages-container');
+      container.innerHTML = '';
+      messages.forEach(renderMessage);
+      scrollToBottom();
+    });
+
+    socket.on('receive_message', (data) => {
+      if (data.roomId === activeRoomId) {
+        renderMessage(data);
+        scrollToBottom();
+      } else if (data.sender !== currentUser.name) {
+        showNotification(`💬 New message from ${data.sender}!`);
+      }
+    });
+  socket.on('message_edited', (data) => {
+      const msgElem = document.getElementById(`msg-text-${data.id}`);
+      if (msgElem) msgElem.textContent = `${data.newMessage} (edited)`;
+    });
+
+    socket.on('new_status', () => fetchStatuses());
+    socket.on('status_deleted', () => fetchStatuses());
+
+    socket.on('status_view_updated', (data) => {
+      const badge = document.getElementById(`status-view-count-${data.statusId}`);
+      if (badge) badge.textContent = `👁️ ${data.viewCount}`;
+    });
+
+    // Sending Messages & Uploads
+    function sendMessage(fileUrl = null, fileType = null) {
+      const text = document.getElementById('message-input').value.trim();
+      if ((text || fileUrl) && activeRoomId) {
+        socket.emit('send_message', {
+          roomId: activeRoomId,
+          sender: currentUser.name,
+          phone: currentUser.phone,
+          message: text,
+          fileUrl: fileUrl,
+          fileType: fileType,
+          replyTo: replyTargetMessage
+        });
+        document.getElementById('message-input').value = '';
+        cancelReply();
+      }
+    }
+
+    document.getElementById('send-btn').addEventListener('click', () => sendMessage());
+    document.getElementById('message-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
+
+    // File Upload Handler
+    const attachBtn = document.getElementById('attach-btn');
+    const mediaFileInput = document.getElementById('media-file-input');
+    attachBtn.addEventListener('click', () => mediaFileInput.click());
+    mediaFileInput.addEventListener('change', async () => {
+      const file = mediaFileInput.files[0];
+      if (!file) return;
+      const formData = new FormData();
+      formData.append('file', file);
+      try {
+        const res = await fetch('/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.fileUrl) sendMessage(data.fileUrl, data.fileType);
+      } catch (err) { alert('Upload failed.'); }
+      mediaFileInput.value = '';
+    });
+
+    // Voice Note Handler
+    const micBtn = document.getElementById('mic-btn');
+    micBtn.addEventListener('click', async () => {
+      if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          mediaRecorder = new MediaRecorder(stream);
+          audioChunks = [];
+          mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+          mediaRecorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            const formData = new FormData();
+            formData.append('file', audioBlob, 'voicenote.webm');
+            const res = await fetch('/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.fileUrl) sendMessage(data.fileUrl, 'audio/webm');
+          };
+          mediaRecorder.start();
+          micBtn.classList.add('recording');
+        } catch (err) { alert('Microphone unavailable.'); }
+      } else {
+        mediaRecorder.stop();
+        micBtn.classList.remove('recording');
+      }
+    });
+
+    function renderMessage(data) {
+      const container = document.getElementById('messages-container');
+      const isSent = data.sender === currentUser.name;
+      const bubble = document.createElement('div');
+      bubble.className = `message-bubble ${isSent ? 'sent' : 'received'}`;
+      
+      let replyHtml = data.replyTo ? `<div class="reply-quote">${escapeHtml(data.replyTo)}</div>` : '';
+      let mediaHtml = '';
+
+      if (data.fileUrl) {
+        if (data.fileType && data.fileType.startsWith('image')) mediaHtml = `<img src="${data.fileUrl}" class="media-element"/>`;
+        else if (data.fileType && data.fileType.startsWith('video')) mediaHtml = `<video src="${data.fileUrl}" controls class="media-element"></video>`;
+        else if (data.fileType && data.fileType.startsWith('audio')) mediaHtml = `<audio src="${data.fileUrl}" controls style="margin-top:6px; width:100%;"></audio>`;
+      }
+
+      bubble.innerHTML = `
+        ${replyHtml}
+        <div style="font-size:0.72rem; font-weight:bold; color:var(--accent); margin-bottom:2px;">${isSent ? 'You' : escapeHtml(data.sender)}</div>
+        ${data.message ? `<div id="msg-text-${data.id}">${escapeHtml(data.message)}</div>` : ''}
+        ${mediaHtml}
+        <div class="msg-time">${new Date(data.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+      `;
+      container.appendChild(bubble);
+    }
+
+    function cancelReply() {
+      replyTargetMessage = null;
+      document.getElementById('reply-preview-bar').style.display = 'none';
+    }
+
+    // Status System with DELETE Functionality
+    document.getElementById('post-status-btn').addEventListener('click', () => document.getElementById('status-file-input').click());
+    document.getElementById('status-file-input').addEventListener('change', async () => {
+      const file = document.getElementById('status-file-input').files[0];
+      if (!file) return;
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('phone', currentUser.phone);
+      formData.append('userName', currentUser.name);
+      try {
+        await fetch('/api/status', { method: 'POST', body: formData });
+        fetchStatuses();
+      } catch (err) { alert('Status post failed.'); }
+      document.getElementById('status-file-input').value = '';
+    });
+    async function fetchStatuses() {
+      try {
+        const res = await fetch('/api/statuses');
+        const statuses = await res.json();
+        const feed = document.getElementById('status-feed-list');
+        feed.innerHTML = '';
+        statuses.forEach(status => renderStatusItem(status));
+      } catch (err) { console.error('Failed to load statuses', err); }
+    }
+
+    async function renderStatusItem(status) {
+      const feed = document.getElementById('status-feed-list');
+      const item = document.createElement('div');
+      item.className = 'status-card';
+
+      let mediaElement = status.fileType.startsWith('video') 
+        ? `<video src="${status.fileUrl}" class="status-thumb"></video>`
+        : `<img src="${status.fileUrl}" class="status-thumb"/>`;
+
+      const viewRes = await fetch(`/api/status/${status.id}/views`);
+      const viewData = await viewRes.json();
+      const isOwner = status.phone === currentUser.phone;
+
+      item.innerHTML = `
+        <div style="display:flex; align-items:center; gap:12px; cursor:pointer; flex:1;" onclick="openStatusViewer(${JSON.stringify(status).replace(/"/g, '&quot;')})">
+          ${mediaElement}
+          <div>
+            <h4>${escapeHtml(status.userName)} ${isOwner ? '(You)' : ''}</h4>
+            <p style="font-size:0.75rem; color:var(--subtext);">${new Date(status.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</p>
+            <div id="status-view-count-${status.id}" style="font-size:0.75rem; color:var(--accent);">👁️ ${viewData.viewCount || 0} views</div>
+          </div>
+        </div>
+        ${isOwner ? `<button class="delete-status-btn" onclick="deleteStatus(${status.id})">Delete</button>` : ''}
+      `;
+      feed.appendChild(item);
+    }
+
+    async function deleteStatus(statusId) {
+      if (!confirm('Are you sure you want to delete this status update?')) return;
+      try {
+        await fetch(`/api/status/${statusId}`, { method: 'DELETE' });
+        fetchStatuses();
+      } catch (err) { alert('Failed to delete status.'); }
+    }
+
+    async function openStatusViewer(status) {
+      const modal = document.getElementById('status-viewer-modal');
+      const holder = document.getElementById('status-media-holder');
+      document.getElementById('status-viewer-user').textContent = `${status.userName}'s Status`;
+      holder.innerHTML = status.fileType.startsWith('video')
+        ? `<video src="${status.fileUrl}" controls autoPlay style="max-width:100%; max-height:80vh;"></video>`
+        : `<img src="${status.fileUrl}" style="max-width:100%; max-height:80vh;"/>`;
+
+      modal.style.display = 'flex';
+      try {
+        const res = await fetch('/api/status/view', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ statusId: status.id, viewerPhone: currentUser.phone })
+        });
+        const data = await res.json();
+        document.getElementById('status-viewer-views').textContent = `👁️ ${data.viewCount} views`;
+      } catch (err) { console.error(err); }
+    }
+
+    function closeStatusViewer() {
+      document.getElementById('status-viewer-modal').style.display = 'none';
+      document.getElementById('status-media-holder').innerHTML = '';
+    }
+
+    function scrollToBottom() {
+      const container = document.getElementById('messages-container');
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function escapeHtml(text) {
+      return text ? text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;") : '';
+    }
+  </script>
+</body>
+</html>
