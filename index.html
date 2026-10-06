@@ -1,0 +1,416 @@
+cat << 'EOF' > index.html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>WaveThread Messenger</title>
+  <style>
+    :root {
+      --wa-bg: #0b141a;
+      --wa-card: #111b21;
+      --wa-header: #202c33;
+      --wa-text: #e9edef;
+      --wa-muted: #8696a0;
+      --wa-green: #00a884;
+      --wa-sent: #005c4b;
+      --wa-recv: #202c33;
+      --wa-border: #222d34;
+      --wa-input-bg: #2a3942;
+    }
+
+    [data-theme="light"] {
+      --wa-bg: #efeae2;
+      --wa-card: #ffffff;
+      --wa-header: #008069;
+      --wa-text: #111b21;
+      --wa-muted: #667781;
+      --wa-green: #008069;
+      --wa-sent: #d9fdd3;
+      --wa-recv: #ffffff;
+      --wa-border: #e9edef;
+      --wa-input-bg: #f0f2f5;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    html, body { height: 100%; width: 100%; background: var(--wa-bg); color: var(--wa-text); display: flex; flex-direction: column; overflow: hidden; transition: background 0.3s, color 0.3s; }
+
+    /* Phone Authentication Screen */
+    #auth-screen { position: fixed; inset: 0; background: var(--wa-bg); z-index: 10000; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
+    .auth-card { width: 100%; max-width: 360px; background: var(--wa-card); padding: 28px; border-radius: 16px; border: 1px solid var(--wa-border); box-shadow: 0 8px 24px rgba(0,0,0,0.3); text-align: center; }
+    .auth-logo { font-size: 2rem; font-weight: 800; color: var(--wa-green); margin-bottom: 8px; }
+    .auth-sub { font-size: 0.85rem; color: var(--wa-muted); margin-bottom: 24px; }
+    .auth-field { width: 100%; padding: 14px; margin-bottom: 14px; border-radius: 10px; border: 1px solid var(--wa-border); background: var(--wa-input-bg); color: var(--wa-text); outline: none; font-size: 1rem; }
+    .btn-auth { width: 100%; padding: 14px; border-radius: 10px; border: none; background: var(--wa-green); color: #fff; font-size: 1rem; font-weight: 700; cursor: pointer; }
+
+    /* Top App Header */
+    header { height: 60px; background: var(--wa-header); padding: 0 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--wa-border); flex-shrink: 0; }
+    .app-title { font-size: 1.2rem; font-weight: 700; color: #fff; }
+    .header-actions { display: flex; gap: 12px; align-items: center; }
+    .icon-btn { background: none; border: none; color: var(--wa-muted); font-size: 1.2rem; cursor: pointer; }
+
+    /* Navigation Tabs */
+    .nav-tabs { display: flex; background: var(--wa-header); border-bottom: 1px solid var(--wa-border); flex-shrink: 0; }
+    .tab { flex: 1; text-align: center; padding: 12px; font-weight: 600; font-size: 0.9rem; color: var(--wa-muted); cursor: pointer; border-bottom: 3px solid transparent; }
+    .tab.active { color: var(--wa-green); border-bottom-color: var(--wa-green); }
+
+    /* Tab Content Views */
+    .content-section { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+    .content-section.active { display: flex; }
+
+    /* Chat View */
+    #chat-box { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; background-image: radial-gradient(var(--wa-border) 1px, transparent 0); background-size: 20px 20px; }
+
+    .message { max-width: 80%; padding: 8px 12px; border-radius: 10px; font-size: 0.93rem; line-height: 1.4; word-wrap: break-word; position: relative; }
+    .message.sent { align-self: flex-end; background: var(--wa-sent); border-top-right-radius: 2px; }
+    .message.received { align-self: flex-start; background: var(--wa-recv); border-top-left-radius: 2px; border: 1px solid var(--wa-border); }
+    .sender-tag { font-size: 0.7rem; color: #53bdeb; font-weight: bold; margin-bottom: 2px; }
+    .sender-phone { font-size: 0.65rem; color: var(--wa-muted); margin-left: 4px; font-weight: normal; }
+    .msg-meta { font-size: 0.65rem; color: var(--wa-muted); text-align: right; margin-top: 4px; display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+    .ticks { color: #53bdeb; font-weight: bold; }
+
+    .message img, .message video { max-width: 100%; border-radius: 8px; margin-top: 6px; display: block; }
+    .message audio { width: 100%; margin-top: 6px; }
+
+    #typing-indicator { height: 20px; padding: 0 16px; font-size: 0.75rem; color: var(--wa-green); font-style: italic; flex-shrink: 0; }
+
+    /* Bottom Input Footer */
+    footer { min-height: 62px; background: var(--wa-header); padding: 8px 12px; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    footer input[type="text"] { flex: 1; padding: 12px 16px; border-radius: 24px; border: none; background: var(--wa-input-bg); color: var(--wa-text); outline: none; font-size: 0.95rem; }
+    .btn-circle { width: 42px; height: 42px; border-radius: 50%; border: none; background: transparent; color: var(--wa-muted); font-size: 1.2rem; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+    .btn-send { background: var(--wa-green); color: #fff; }
+    .btn-recording { background: #ea4335 !important; color: #fff !important; animation: pulse 1s infinite; }
+
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+
+    /* Status Tab View */
+    #status-section { padding: 16px; overflow-y: auto; }
+    .status-card { background: var(--wa-card); padding: 12px; border-radius: 12px; border: 1px solid var(--wa-border); margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
+    .status-user { display: flex; align-items: center; gap: 12px; }
+    .status-ring { width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--wa-green); padding: 2px; display: flex; align-items: center; justify-content: center; }
+    .status-avatar { width: 100%; height: 100%; border-radius: 50%; background: var(--wa-muted); display: flex; align-items: center; justify-content: center; font-weight: bold; color: #fff; }
+    .status-feed { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+    .status-item { background: var(--wa-card); border: 1px solid var(--wa-border); border-radius: 12px; overflow: hidden; height: 200px; position: relative; cursor: pointer; }
+    .status-item img, .status-item video { width: 100%; height: 100%; object-fit: cover; }
+    .status-caption { position: absolute; bottom: 0; inset-x: 0; background: rgba(0,0,0,0.7); color: #fff; padding: 6px; font-size: 0.75rem; text-align: center; }
+
+    /* Fullscreen Story Viewer */
+    #status-viewer { position: fixed; inset: 0; background: #000; z-index: 20000; display: none; flex-direction: column; align-items: center; justify-content: center; }
+    #status-viewer img, #status-viewer video { max-width: 100%; max-height: 80vh; }
+    .close-viewer { position: absolute; top: 20px; right: 20px; color: #fff; font-size: 2rem; cursor: pointer; }
+
+    #file-input, #status-file-input { display: none; }
+  </style>
+</head>
+<body data-theme="dark">
+
+  <!-- Phone Auth Screen Gate -->
+  <div id="auth-screen">
+    <div class="auth-card">
+      <div class="auth-logo">WaveThread</div>
+      <div class="auth-sub">Enter your phone number to start chatting</div>
+      <input type="tel" id="auth-phone" class="auth-field" placeholder="Phone Number (e.g. +2348012345678)" />
+      <input type="text" id="auth-name" class="auth-field" placeholder="Your Full Name" />
+      <button class="btn-auth" onclick="authenticate()">Verify & Continue</button>
+    </div>
+  </div>
+
+  <!-- App Header -->
+  <header>
+    <div class="app-title">WaveThread</div>
+    <div class="header-actions">
+      <button class="icon-btn" onclick="toggleTheme()" title="Toggle Dark/Light Mode">🌓</button>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <div class="nav-tabs">
+    <div class="tab active" onclick="switchTab('chats')">CHATS</div>
+    <div class="tab" onclick="switchTab('status')">STATUS</div>
+  </div>
+
+  <!-- Chats View -->
+  <div id="chats-section" class="content-section active">
+    <div id="chat-box"></div>
+    <div id="typing-indicator"></div>
+    <footer>
+      <button class="btn-circle" onclick="document.getElementById('file-input').click()">📎</button>
+      <input type="file" id="file-input" accept="image/*,video/*,audio/*" onchange="uploadChatMedia(this.files[0])" />
+      <input type="text" id="msg-input" placeholder="Message..." onkeypress="handleKeyPress(event)" oninput="notifyTyping()" />
+      <button class="btn-circle" id="record-btn" onclick="toggleRecord()">🎙️</button>
+      <button class="btn-circle btn-send" onclick="sendTextMessage()">➤</button>
+    </footer>
+  </div>
+
+  <!-- Status View -->
+  <div id="status-section" class="content-section">
+    <div class="status-card">
+      <div class="status-user">
+        <div class="status-ring"><div class="status-avatar">+</div></div>
+        <div>
+          <strong style="font-size: 0.95rem;">My Status</strong>
+          <div style="font-size: 0.75rem; color: var(--wa-muted);">Tap to add status update</div>
+        </div>
+      </div>
+      <button class="btn-auth" style="width: auto; padding: 8px 16px; font-size: 0.85rem;" onclick="document.getElementById('status-file-input').click()">Add Status</button>
+      <input type="file" id="status-file-input" accept="image/*,video/*" onchange="uploadStatusMedia(this.files[0])" />
+    </div>
+
+    <h3 style="font-size: 0.85rem; color: var(--wa-muted); margin-bottom: 12px; text-transform: uppercase;">Recent Updates</h3>
+    <div class="status-feed" id="status-feed"></div>
+  </div>
+
+  <!-- Status Viewer Modal -->
+  <div id="status-viewer">
+    <span class="close-viewer" onclick="closeStatusViewer()">&times;</span>
+    <div id="status-viewer-content"></div>
+    <div id="status-viewer-caption" style="color: #fff; margin-top: 12px; font-size: 1rem;"></div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let currentUser = null;
+
+    function toggleTheme() {
+      const body = document.body;
+      const newTheme = body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      body.setAttribute('data-theme', newTheme);
+    }
+
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
+
+      if (tabName === 'chats') {
+        document.querySelectorAll('.tab')[0].classList.add('active');
+        document.getElementById('chats-section').classList.add('active');
+      } else {
+        document.querySelectorAll('.tab')[1].classList.add('active');
+        document.getElementById('status-section').classList.add('active');
+        loadStatuses();
+      }
+    }
+
+    function authenticate() {
+      const phone = document.getElementById('auth-phone').value.trim();
+      const name = document.getElementById('auth-name').value.trim();
+
+      if (!phone || !name) return alert('Please provide both your phone number and full name.');
+
+      fetch('/api/auth/phone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, username: name })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          currentUser = data.user;
+          document.getElementById('auth-screen').style.display = 'none';
+          initApp();
+        } else {
+          alert('Auth failed: ' + data.error);
+        }
+      });
+    }
+
+    function initApp() {
+      fetch('/api/messages')
+        .then(res => res.json())
+        .then(messages => {
+          document.getElementById('chat-box').innerHTML = '';
+          messages.forEach(msg => appendMessage(msg));
+          scrollToBottom();
+        });
+
+      socket.on('receiveMessage', (msg) => {
+        appendMessage(msg);
+        scrollToBottom();
+      });
+
+      socket.on('userTyping', (user) => {
+        document.getElementById('typing-indicator').innerText = `${user.username} is typing...`;
+      });
+
+      socket.on('userStopTyping', () => {
+        document.getElementById('typing-indicator').innerText = '';
+      });
+
+      socket.on('newStatus', () => loadStatuses());
+    }
+
+    function sendTextMessage() {
+      const input = document.getElementById('msg-input');
+      const text = input.value.trim();
+      if (!text || !currentUser) return;
+
+      socket.emit('sendMessage', {
+        phone: currentUser.phone,
+        sender: currentUser.username,
+        text
+      });
+      input.value = '';
+      socket.emit('stopTyping');
+    }
+
+    function handleKeyPress(e) {
+      if (e.key === 'Enter') sendTextMessage();
+    }
+
+    let typingTimeout;
+    function notifyTyping() {
+      if (!currentUser) return;
+      socket.emit('typing', currentUser);
+      clearTimeout(typingTimeout);
+      typingTimeout = setTimeout(() => socket.emit('stopTyping'), 1500);
+    }
+
+    function uploadChatMedia(file) {
+      if (!file || !currentUser) return;
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      fetch('/api/upload', { method: 'POST', body: formData })
+        .then(res => res.json())
+        .then(data => {
+          socket.emit('sendMessage', {
+            phone: currentUser.phone,
+            sender: currentUser.username,
+            text: '',
+            fileUrl: data.fileUrl,
+            fileType: data.fileType
+          });
+          document.getElementById('file-input').value = '';
+        });
+    }
+
+    let mediaRecorder;
+    let audioChunks = [];
+    let isRecording = false;
+
+    async function toggleRecord() {
+      const recBtn = document.getElementById('record-btn');
+      if (!isRecording) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          mediaRecorder = new MediaRecorder(stream);
+          audioChunks = [];
+
+          mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+          mediaRecorder.onstop = () => {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
+            const file = new File([audioBlob], 'voicenote.mp3', { type: 'audio/mp3' });
+            uploadChatMedia(file);
+          };
+
+          mediaRecorder.start();
+          isRecording = true;
+          recBtn.classList.add('btn-recording');
+        } catch (err) {
+          alert('Microphone access is required for voice notes.');
+        }
+      } else {
+        mediaRecorder.stop();
+        isRecording = false;
+        recBtn.classList.remove('btn-recording');
+      }
+    }
+
+    function appendMessage(msg) {
+      const chatBox = document.getElementById('chat-box');
+      const isSent = msg.sender_phone === currentUser?.phone;
+
+      const msgDiv = document.createElement('div');
+      msgDiv.className = `message ${isSent ? 'sent' : 'received'}`;
+
+      let content = `<div class="sender-tag">${msg.sender_name}<span class="sender-phone">(${msg.sender_phone})</span></div>`;
+      if (msg.text) content += `<div>${msg.text}</div>`;
+
+      if (msg.file_url) {
+        if (msg.file_type === 'image') {
+          content += `<img src="${msg.file_url}" alt="Attachment" />`;
+        } else if (msg.file_type === 'video') {
+          content += `<video src="${msg.file_url}" controls></video>`;
+        } else if (msg.file_type === 'audio') {
+          content += `<audio src="${msg.file_url}" controls></audio>`;
+        } else {
+          content += `<a href="${msg.file_url}" target="_blank" style="color:#53bdeb;">📄 Download Document</a>`;
+        }
+      }
+
+      const time = new Date(msg.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      content += `<div class="msg-meta"><span>${time}</span>${isSent ? '<span class="ticks">✓✓</span>' : ''}</div>`;
+
+      msgDiv.innerHTML = content;
+      chatBox.appendChild(msgDiv);
+    }
+
+    function uploadStatusMedia(file) {
+      if (!file || !currentUser) return;
+      const caption = prompt('Add a caption for your status:') || '';
+
+      const formData = new FormData();
+      formData.append('media', file);
+      formData.append('phone', currentUser.phone);
+      formData.append('username', currentUser.username);
+      formData.append('caption', caption);
+
+      fetch('/api/status/upload', { method: 'POST', body: formData })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            alert('Status posted successfully!');
+            loadStatuses();
+          }
+        });
+    }
+
+    function loadStatuses() {
+      fetch('/api/statuses')
+        .then(res => res.json())
+        .then(statuses => {
+          const feed = document.getElementById('status-feed');
+          feed.innerHTML = '';
+          statuses.forEach(st => {
+            const item = document.createElement('div');
+            item.className = 'status-item';
+            item.onclick = () => openStatusViewer(st);
+
+            let mediaHTML = st.media_type === 'video'
+              ? `<video src="${st.media_url}"></video>`
+              : `<img src="${st.media_url}" alt="Status" />`;
+
+            item.innerHTML = `${mediaHTML}<div class="status-caption">${st.user_name}</div>`;
+            feed.appendChild(item);
+          });
+        });
+    }
+
+    function openStatusViewer(status) {
+      const viewer = document.getElementById('status-viewer');
+      const content = document.getElementById('status-viewer-content');
+      const caption = document.getElementById('status-viewer-caption');
+
+      content.innerHTML = status.media_type === 'video'
+        ? `<video src="${status.media_url}" controls autoplay></video>`
+        : `<img src="${status.media_url}" />`;
+
+      caption.innerText = `${status.user_name}: ${status.caption}`;
+      viewer.style.display = 'flex';
+    }
+
+    function closeStatusViewer() {
+      document.getElementById('status-viewer').style.display = 'none';
+      document.getElementById('status-viewer-content').innerHTML = '';
+    }
+
+    function scrollToBottom() {
+      const chatBox = document.getElementById('chat-box');
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+  </script>
+</body>
+</html>
+EOF
