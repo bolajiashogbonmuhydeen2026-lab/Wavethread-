@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>WaveThread Messenger</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    :root {
+      --bg-main: #0b141a;
+      --header-bg: #202c33;
+      --card-bg: #111b21;
+      --text-primary: #e9edef;
+      --text-secondary: #8696a0;
+      --msg-sent: #005c4b;
+      --msg-received: #202c33;
+      --accent: #00a884;
+      --input-bg: #2a3942;
+      --border-color: rgba(134, 150, 160, 0.15);
+    }
+
+    body.light-theme {
+      --bg-main: #efeae2;
+      --header-bg: #008069;
+      --card-bg: #ffffff;
+      --text-primary: #111b21;
+      --text-secondary: #667781;
+      --msg-sent: #d9fdd3;
+      --msg-received: #ffffff;
+      --accent: #008069;
+      --input-bg: #f0f2f5;
+      --border-color: rgba(0, 0, 0, 0.08);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: var(--bg-main); color: var(--text-primary); display: flex; justify-content: center; height: 100vh; overflow: hidden; }
+
+    .app-container { width: 100%; max-width: 500px; height: 100vh; display: flex; flex-direction: column; background-color: var(--bg-main); position: relative; }
+
+    /* Auth Screen */
+    #auth-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding: 20px; }
+    .auth-card { background: var(--card-bg); padding: 30px 24px; border-radius: 16px; width: 100%; max-width: 380px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); text-align: center; }
+    .auth-card h2 { color: var(--accent); margin-bottom: 6px; font-size: 1.6rem; }
+    .auth-card p { color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 20px; }
+    .input-group { margin-bottom: 16px; text-align: left; }
+    .input-group label { display: block; font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 6px; font-weight: bold; text-transform: uppercase; }
+    .input-group input { width: 100%; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--input-bg); color: var(--text-primary); font-size: 0.95rem; outline: none; }
+    .auth-btn { width: 100%; padding: 12px; background: var(--accent); border: none; border-radius: 8px; color: white; font-weight: bold; font-size: 1rem; cursor: pointer; transition: opacity 0.2s; }
+
+    /* Main Screen Layout */
+    #main-screen { display: none; flex-direction: column; height: 100%; width: 100%; }
+    .app-header { background: var(--header-bg); padding: 12px 16px 0 16px; border-bottom: 1px solid var(--border-color); }
+    .header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .app-title { font-size: 1.25rem; font-weight: bold; color: var(--accent); }
+    
+    .nav-tabs { display: flex; }
+    .tab-btn { flex: 1; text-align: center; padding: 10px 0; font-weight: bold; font-size: 0.88rem; color: var(--text-secondary); cursor: pointer; border-bottom: 3px solid transparent; }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .tab-content { flex: 1; display: none; flex-direction: column; overflow: hidden; position: relative; }
+    .tab-content.active { display: flex; }
+
+    /* Chats List */
+    .chat-controls { padding: 12px 16px; background: var(--card-bg); border-bottom: 1px solid var(--border-color); display: flex; gap: 8px; }
+    .chat-controls input { flex: 1; padding: 10px 12px; border-radius: 8px; border: none; background: var(--input-bg); color: var(--text-primary); outline: none; font-size: 0.88rem; }
+    .chat-controls button { padding: 10px 14px; background: var(--accent); border: none; border-radius: 8px; color: white; font-weight: bold; cursor: pointer; font-size: 0.85rem; }
+
+    .chat-list-container { flex: 1; overflow-y: auto; }
+    .chat-list-item { display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: var(--card-bg); border-bottom: 1px solid var(--border-color); cursor: pointer; }
+    .chat-avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; font-weight: bold; color: white; font-size: 1.1rem; flex-shrink: 0; }
+    .chat-info { flex: 1; overflow: hidden; }
+    .chat-info h4 { font-size: 0.95rem; margin-bottom: 2px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+    .chat-info p { font-size: 0.78rem; color: var(--text-secondary); text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+
+    /* Active Conversation UI */
+    #active-chat-view { display: none; flex-direction: column; height: 100%; position: absolute; top:0; left:0; width:100%; background: var(--bg-main); z-index: 10; }
+    .active-chat-header { background: var(--header-bg); padding: 10px 16px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border-color); }
+    .back-btn { background: transparent; border: none; color: var(--text-primary); font-size: 1.3rem; cursor: pointer; padding: 4px; }
+
+    /* Message Rendering */
+    .messages-area { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+    .message-bubble { max-width: 82%; padding: 8px 12px; border-radius: 8px; font-size: 0.92rem; word-wrap: break-word; display: flex; flex-direction: column; position: relative; }
+    .message-bubble.sent { align-self: flex-end; background-color: var(--msg-sent); border-top-right-radius: 0; }
+    .message-bubble.received { align-self: flex-start; background-color: var(--msg-received); border-top-left-radius: 0; }
+    .reply-quote { background: rgba(0,0,0,0.25); border-left: 4px solid var(--accent); padding: 4px 8px; border-radius: 4px; font-size: 0.78rem; margin-bottom: 6px; color: var(--text-secondary); }
+    .media-element { max-width: 100%; max-height: 250px; border-radius: 6px; margin-top: 4px; object-fit: cover; }
+    .msg-time { font-size: 0.65rem; color: var(--text-secondary); align-self: flex-end; margin-top: 4px; }
+    .edit-btn { position: absolute; top: 4px; right: 6px; font-size: 0.7rem; color: var(--text-secondary); cursor: pointer; background: transparent; border: none; }
+
+    /* Reply Preview Bar */
+    #reply-preview-bar { background: var(--header-bg); padding: 8px 14px; display: none; justify-content: space-between; align-items: center; border-left: 4px solid var(--accent); border-top: 1px solid var(--border-color); }
+
+    /* Bottom Input Controls */
+    .chat-input-bar { background: var(--header-bg); padding: 10px 12px; display: flex; align-items: center; gap: 8px; }
+    .action-btn { background: transparent; border: none; font-size: 1.3rem; cursor: pointer; color: var(--text-secondary); padding: 4px; display: flex; align-items: center; justify-content: center; }
+    .chat-input-bar input[type="text"] { flex: 1; padding: 10px 14px; border-radius: 20px; border: none; background: var(--input-bg); color: var(--text-primary); font-size: 0.95rem; outline: none; }
+    .send-btn { background: var(--accent); border: none; width: 40px; height: 40px; border-radius: 50%; color: white; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; }
+    .recording { color: #ff4b4b !important; animation: pulse 1s infinite; }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+
+    /* Status Section */
+    .status-container { padding: 16px; overflow-y: auto; flex: 1; }
+    .status-card { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--card-bg); border-radius: 10px; margin-bottom: 12px; border: 1px solid var(--border-color); }
+    .status-media-container { width: 52px; height: 52px; border-radius: 50%; border: 2.5 solid var(--accent); overflow: hidden; display: flex; align-items: center; justify-content: center; background: #000; flex-shrink: 0; }
+    .status-thumb { width: 100%; height: 100%; object-fit: cover; }
+  </style>
+</head>
+<body>
+
+  <div class="app-container">
+    <!-- Registration / Authentication -->
+    <div id="auth-screen">
+      <div class="auth-card">
+        <h2>WaveThread</h2>
+        <p>Enter your contact details to connect</p>
+        <div class="input-group">
+          <label>Full Name</label>
+          <input type="text" id="user-name" placeholder="e.g. Bolaji" autocomplete="off">
+        </div>
+        <div class="input-group">
+          <label>Phone Number</label>
+          <input type="tel" id="user-phone" placeholder="e.g. +234800000000" autocomplete="off">
+        </div>
+        <button class="auth-btn" id="login-btn">Start Messaging</button>
+      </div>
+    </div>
+
+    <!-- Main Messenger View -->
+    <div id="main-screen">
+      <div class="app-header">
+        <div class="header-top">
+          <span class="app-title">WaveThread</span>
+          <button class="action-btn" id="theme-btn" title="Toggle Theme">🌙</button>
+        </div>
+        <div class="nav-tabs">
+          <div class="tab-btn active" id="tab-chats">CHATS</div>
+          <div class="tab-btn" id="tab-status">STATUS</div>
+        </div>
+      </div>
+
+      <!-- CHATS TAB PANEL -->
+      <div class="tab-content active" id="chats-panel">
+        <div class="chat-controls">
+          <input type="tel" id="dm-phone-input" placeholder="Enter recipient phone #...">
+          <button id="start-dm-btn">Message</button>
+        </div>
+
+        <div class="chat-list-container">
+          <div class="chat-list-item" onclick="openChat('global_group', 'Global Science Community')">
+            <div class="chat-avatar">G</div>
+            <div class="chat-info">
+              <h4>Global Science Community</h4>
+              <p>Public group conversation</p>
+            </div>
+          </div>
+          <div id="private-chats-list"></div>
+        </div>
+      </div>
+
+      <!-- ACTIVE CHAT VIEW OVERLAY -->
+      <div id="active-chat-view">
+        <div class="active-chat-header">
+          <button class="back-btn" id="close-chat-btn">←</button>
+          <div class="chat-avatar" id="active-avatar">C</div>
+          <div class="chat-info">
+            <h4 id="active-chat-name">Chat Room</h4>
+            <p id="active-chat-sub">Online</p>
+          </div>
+        </div>
+
+        <div class="messages-area" id="messages-container"></div>
+
+        <div id="reply-preview-bar">
+          <span id="reply-preview-text">Replying...</span>
+          <button onclick="cancelReply()" style="background:transparent; border:none; color:var(--text-primary); cursor:pointer;">✕</button>
+        </div>
+
+        <div class="chat-input-bar">
+          <button class="action-btn" id="attach-btn" title="Attach Photo/Video">📎</button>
+          <input type="file" id="media-file-input" accept="image/*,video/*,audio/*" style="display:none;">
+          <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off">
+          <button class="action-btn" id="mic-btn" title="Record Voice Note">🎙️</button>
+          <button class="send-btn" id="send-btn">➤</button>
+        </div>
+      </div>
+
+      <!-- STATUS TAB PANEL -->
+      <div class="tab-content" id="status-panel">
+        <div class="status-container">
+          <div class="status-card">
+            <div class="chat-avatar" id="status-avatar-my">U</div>
+            <div class="chat-info">
+              <h4>My Status</h4>
+              <p>Post photo or video updates</p>
+            </div>
+            <button id="post-status-btn" style="background:var(--accent); color:white; border:none; padding:8px 14px; border-radius:12px; font-weight:bold; cursor:pointer;">+ Add</button>
+            <input type="file" id="status-file-input" accept="image/*,video/*" style="display:none;">
+          </div>
+          <div style="font-size:0.75rem; font-weight:bold; color:var(--text-secondary); text-transform:uppercase; margin:16px 0 10px 0;">Recent Updates</div>
+          <div id="status-feed-list"></div>
+        </div>
+      </div>
+
+    </div>
+            </div>
+              <script>
+    const socket = io();
+    let currentUser = { name: '', phone: '' };
+    let activeRoomId = null;
+    let replyTargetMessage = null;
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let savedPrivateChats = new Set();
+
+    // Authentication & Registration Setup
+    document.getElementById('login-btn').addEventListener('click', () => {
+      const name = document.getElementById('user-name').value.trim();
+      const phone = document.getElementById('user-phone').value.trim();
+      if (!name || !phone) return alert('Please enter both name and phone number.');
+      
+      currentUser = { name, phone };
+      document.getElementById('auth-screen').style.display = 'none';
+      document.getElementById('main-screen').style.display = 'flex';
+      document.getElementById('status-avatar-my').textContent = name.charAt(0).toUpperCase();
+      
+      fetchStatuses();
+    });
+
+    // Dark/Light Theme Switch
+    document.getElementById('theme-btn').addEventListener('click', () => {
+      document.body.classList.toggle('light-theme');
+    });
+
+    // Navigation Tabs
+    const tabChats = document.getElementById('tab-chats');
+    const tabStatus = document.getElementById('tab-status');
+    
+    tabChats.addEventListener('click', () => {
+      tabChats.classList.add('active'); tabStatus.classList.remove('active');
+      document.getElementById('chats-panel').classList.add('active');
+      document.getElementById('status-panel').classList.remove('active');
+    });
+
+    tabStatus.addEventListener('click', () => {
+      tabStatus.classList.add('active'); tabChats.classList.remove('active');
+      document.getElementById('status-panel').classList.add('active');
+      document.getElementById('chats-panel').classList.remove('active');
+      fetchStatuses();
+    });
+
+    // Direct Message Initialization
+    document.getElementById('start-dm-btn').addEventListener('click', () => {
+      const targetPhone = document.getElementById('dm-phone-input').value.trim();
+      if (!targetPhone) return alert('Please enter a target phone number.');
+      if (targetPhone === currentUser.phone) return alert('You cannot DM your own number.');
+
+      const roomId = [currentUser.phone, targetPhone].sort().join('_');
+      addPrivateChatToSidebar(roomId, targetPhone);
+      openChat(roomId, `DM: ${targetPhone}`);
+      document.getElementById('dm-phone-input').value = '';
+    });
+
+    function addPrivateChatToSidebar(roomId, label) {
+      if (savedPrivateChats.has(roomId)) return;
+      savedPrivateChats.add(roomId);
+
+      const list = document.getElementById('private-chats-list');
+      const item = document.createElement('div');
+      item.className = 'chat-list-item';
+      item.onclick = () => openChat(roomId, `DM: ${label}`);
+      item.innerHTML = `
+        <div class="chat-avatar">${label.charAt(0).toUpperCase()}</div>
+        <div class="chat-info">
+          <h4>${escapeHtml(label)}</h4>
+          <p>Private Chat Room</p>
+        </div>
+      `;
+      list.prepend(item);
+    }
+
+    function openChat(roomId, displayName) {
+      activeRoomId = roomId;
+      document.getElementById('active-chat-view').style.display = 'flex';
+      document.getElementById('active-chat-name').textContent = displayName;
+      document.getElementById('active-avatar').textContent = displayName.replace('DM: ', '').charAt(0).toUpperCase();
+      socket.emit('join_room', roomId);
+    }
+
+    document.getElementById('close-chat-btn').addEventListener('click', () => {
+      document.getElementById('active-chat-view').style.display = 'none';
+      activeRoomId = null;
+    });
+
+    // Real-Time Socket Event Handlers
+    socket.on('load_messages', (messages) => {
+      const container = document.getElementById('messages-container');
+      container.innerHTML = '';
+      messages.forEach(renderMessage);
+      scrollToBottom();
+    });
+
+    socket.on('receive_message', (data) => {
+      if (data.roomId === activeRoomId) {
+        renderMessage(data);
+        scrollToBottom();
+      }
+    });
+
+    socket.on('message_edited', (data) => {
+      const msgElem = document.getElementById(`msg-text-${data.id}`);
+      if (msgElem) msgElem.textContent = `${data.newMessage} (edited)`;
+    });
+
+    socket.on('new_status', (status) => {
+      renderStatusItem(status, true);
+    });
+
+    // Sending Text & Media Messages
+    function sendMessage(fileUrl = null, fileType = null) {
+      const text = document.getElementById('message-input').value.trim();
+      if ((text || fileUrl) && activeRoomId) {
+        socket.emit('send_message', {
+          roomId: activeRoomId,
+          sender: currentUser.name,
+          phone: currentUser.phone,
+          message: text,
+          fileUrl: fileUrl,
+          fileType: fileType,
+          replyTo: replyTargetMessage
+        });
+        document.getElementById('message-input').value = '';
+        cancelReply();
+      }
+    }
+
+    document.getElementById('send-btn').addEventListener('click', () => sendMessage());
+    document.getElementById('message-input').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') sendMessage();
+    });
+
+    // Media Attachments Handler
+    const attachBtn = document.getElementById('attach-btn');
+    const mediaFileInput = document.getElementById('media-file-input');
+    
+    attachBtn.addEventListener('click', () => mediaFileInput.click());
+    mediaFileInput.addEventListener('change', async () => {
+      const file = mediaFileInput.files[0];
+      if (!file) return;
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const res = await fetch('/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.fileUrl) sendMessage(data.fileUrl, data.fileType);
+      } catch (err) {
+        alert('File upload failed.');
+      }
+      mediaFileInput.value = '';
+    });
+
+    // Audio Voice Note Recorder
+    const micBtn = document.getElementById('mic-btn');
+    micBtn.addEventListener('click', async () => {
+      if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          mediaRecorder = new MediaRecorder(stream);
+          audioChunks = [];
+
+          mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+          mediaRecorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            const formData = new FormData();
+            formData.append('file', audioBlob, 'voicenote.webm');
+
+            const res = await fetch('/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.fileUrl) sendMessage(data.fileUrl, 'audio/webm');
+          };
+
+          mediaRecorder.start();
+          micBtn.classList.add('recording');
+        } catch (err) {
+          alert('Microphone access denied or unavailable.');
+        }
+      } else {
+        mediaRecorder.stop();
+        micBtn.classList.remove('recording');
+      }
+    });
+
+    // Message Rendering Engine
+    function renderMessage(data) {
+      const container = document.getElementById('messages-container');
+      const isSent = data.sender === currentUser.name;
+      const bubble = document.createElement('div');
+      bubble.className = `message-bubble ${isSent ? 'sent' : 'received'}`;
+      
+      let replyHtml = data.replyTo ? `<div class="reply-quote">${escapeHtml(data.replyTo)}</div>` : '';
+      let mediaHtml = '';
+
+      if (data.fileUrl) {
+        if (data.fileType && data.fileType.startsWith('image')) {
+          mediaHtml = `<img src="${data.fileUrl}" class="media-element"/>`;
+        } else if (data.fileType && data.fileType.startsWith('video')) {
+          mediaHtml = `<video src="${data.fileUrl}" controls class="media-element"></video>`;
+        } else if (data.fileType && data.fileType.startsWith('audio')) {
+          mediaHtml = `<audio src="${data.fileUrl}" controls style="margin-top:6px; width:100%;"></audio>`;
+        }
+      }
+
+      const canEdit = isSent && data.message;
+
+      bubble.innerHTML = `
+        ${replyHtml}
+        <div style="font-size:0.72rem; font-weight:bold; color:var(--accent); margin-bottom:2px;">${isSent ? 'You' : escapeHtml(data.sender)}</div>
+        ${data.message ? `<div id="msg-text-${data.id}">${escapeHtml(data.message)}</div>` : ''}
+        ${mediaHtml}
+        <div class="msg-time">${new Date(data.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+        ${canEdit ? `<button class="edit-btn" onclick="editMsg(${data.id}, '${escapeHtml(data.message)}')">✏️</button>` : ''}
+      `;
+
+      // Swipe to Reply Event
+      let touchStartX = 0;
+      bubble.addEventListener('touchstart', e => touchStartX = e.touches[0].clientX);
+      bubble.addEventListener('touchend', e => {
+        if (e.changedTouches[0].clientX - touchStartX > 50) {
+          setReply(data.message || 'Media Content');
+        }
+      });
+
+      container.appendChild(bubble);
+    }
+
+    function setReply(text) {
+      replyTargetMessage = text;
+      document.getElementById('reply-preview-text').textContent = `Replying to: ${text}`;
+      document.getElementById('reply-preview-bar').style.display = 'flex';
+    }
+
+    function cancelReply() {
+      replyTargetMessage = null;
+      document.getElementById('reply-preview-bar').style.display = 'none';
+    }
+
+    function editMsg(id, oldText) {
+      const newText = prompt('Edit your message:', oldText);
+      if (newText && newText !== oldText) {
+        socket.emit('edit_message', { id, roomId: activeRoomId, newMessage: newText });
+      }
+    }
+
+    // Status Post & Feed Engine
+    const postStatusBtn = document.getElementById('post-status-btn');
+    const statusFileInput = document.getElementById('status-file-input');
+
+    postStatusBtn.addEventListener('click', () => statusFileInput.click());
+    statusFileInput.addEventListener('change', async () => {
+      const file = statusFileInput.files[0];
+      if (!file) return;
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('phone', currentUser.phone);
+      formData.append('userName', currentUser.name);
+
+      try {
+        await fetch('/api/status', { method: 'POST', body: formData });
+      } catch (err) {
+        alert('Status post failed.');
+      }
+      statusFileInput.value = '';
+    });
+
+    async function fetchStatuses() {
+      try {
+        const res = await fetch('/api/statuses');
+        const statuses = await res.json();
+        const feed = document.getElementById('status-feed-list');
+        feed.innerHTML = '';
+        statuses.forEach(status => renderStatusItem(status, false));
+      } catch (err) {
+        console.error('Failed to load statuses', err);
+      }
+    }
+
+    function renderStatusItem(status, prepend = false) {
+      const feed = document.getElementById('status-feed-list');
+      const item = document.createElement('div');
+      item.className = 'status-card';
+
+      let mediaElement = status.fileType.startsWith('video') 
+        ? `<video src="${status.fileUrl}" class="status-thumb"></video>`
+        : `<img src="${status.fileUrl}" class="status-thumb"/>`;
+
+      item.innerHTML = `
+        <div class="status-media-container">${mediaElement}</div>
+        <div class="chat-info">
+          <h4>${escapeHtml(status.userName)}</h4>
+          <p>${new Date(status.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</p>
+        </div>
+      `;
+
+      if (prepend) feed.prepend(item);
+      else feed.appendChild(item);
+    }
+
+    function scrollToBottom() {
+      const container = document.getElementById('messages-container');
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function escapeHtml(text) {
+      return text ? text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;") : '';
+    }
+  </script>
+</body>
+</html>
