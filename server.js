@@ -223,66 +223,6 @@ io.on('connection', (socket) => {
     }
   });
   // -------------------------------------
-});
-  // --- 1. DIRECT NUMBER PING & NOTIFICATION ---
-  socket.on('register_user_phone', (phoneNumber) => {
-    if (phoneNumber) {
-      socket.join(phoneNumber); // Puts the user in their own phone number room
-    }
-  });
 
-  socket.on('send_direct_ping', (data) => {
-    const { targetPhone, senderName, message } = data;
-    // Send a direct popup notification to that specific phone number
-    io.to(targetPhone).emit('receive_direct_notification', {
-      sender: senderName,
-      text: message || "Someone is talking to you on Wavethread Messenger!",
-      timestamp: new Date()
-    });
-  });
-
-
-  // --- 2. GLOBAL LIVE ROOM (Everyone on the website sees & talks together) ---
-  socket.on('join_global_room', () => {
-    socket.join('wavethread_global_lobby');
-  });
-
-  socket.on('send_global_message', (data) => {
-    // Broadcasts the message to EVERYONE currently on the website instantly
-    io.to('wavethread_global_lobby').emit('receive_global_message', {
-      sender: data.sender,
-      text: data.text,
-      timestamp: new Date()
-    });
-  });
-
-
-  // --- 3. GROUP CHAT & DM NOTIFICATIONS ---
-  socket.on('join_group_room', (groupId) => {
-    socket.join(groupId);
-  });
-
-  socket.on('send_group_message', (data) => {
-    const { groupId, sender, text, memberPhones } = data;
-    
-    // Send message to everyone currently inside the group chat
-    io.to(groupId).emit('receive_group_message', {
-      sender,
-      text,
-      timestamp: new Date()
-    });
-
-    // Also send background DM notifications to members who aren't currently inside the group
-    if (Array.isArray(memberPhones)) {
-      memberPhones.forEach((phone) => {
-        if (phone !== sender) {
-          io.to(phone).emit('receive_direct_notification', {
-            sender: `Group (${sender})`,
-            text: text,
-            timestamp: new Date()
-          });
-        }
-      });
-    }
-  });
+  
             
