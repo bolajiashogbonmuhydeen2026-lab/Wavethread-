@@ -178,4 +178,50 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
 });
-                           
+io.on('connection', (socket) => {
+  // YOUR EXISTING SOCKET EVENTS ARE HERE...
+  // (like socket.on('join', ...), etc.)
+
+  // --- PASTE THE NEW CODE RIGHT HERE ---
+  
+  // 1. User joins their personal phone room for incoming alerts
+  socket.on('join_user_room', (phoneNumber) => {
+    if (phoneNumber) {
+      socket.io?.sockets?.adapter?.rooms; // or just socket.join
+      socket.join(phoneNumber);
+    }
+  });
+
+  // 2. Real-time message relay + recipient notification push
+  socket.on('send_chat_message', async (data) => {
+    try {
+      const { chatId, sender, text, recipients } = data;
+      
+      // Emit the message to everyone currently viewing this chat room
+      io.to(chatId).emit('receive_chat_message', {
+        chatId,
+        sender,
+        text,
+        timestamp: new Date()
+      });
+
+      // Send a direct notification to other participants
+      if (Array.isArray(recipients)) {
+        recipients.forEach((phone) => {
+          if (phone !== sender) {
+            io.to(phone).emit('new_message_notification', {
+              sender,
+              text,
+              chatId,
+              alert: `New message from ${sender}`
+            });
+          }
+        });
+      }
+    } catch (err) {
+      console.error("Socket message error:", err);
+    }
+  });
+  // -------------------------------------
+});
+              
